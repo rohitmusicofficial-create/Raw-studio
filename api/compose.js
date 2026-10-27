@@ -12,6 +12,7 @@ export default async function handler(req, res) {
   if (process.env.GEMINI_API_KEY) {
     tries.push(['Gemini', () => gemini(prompt, process.env.GEMINI_MODEL || 'gemini-3.6-flash')]);
     tries.push(['Gemini', () => gemini(prompt, process.env.GEMINI_FALLBACK_MODEL || 'gemini-3.5-flash-lite')]);
+    tries.push(['Gemini', () => gemini(prompt, 'gemini-2.5-flash')]);
   }
   if (process.env.GROQ_API_KEY) tries.push(['Groq', () => groq(prompt, process.env.GROQ_MODEL || 'llama-3.3-70b-versatile')]);
   if (!tries.length) return res.status(503).json({ error: 'AI keys missing in Vercel' });

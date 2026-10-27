@@ -378,6 +378,7 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 
 @media (max-width:1640px){.wins-nav button kbd{display:none}.wins-nav button{padding:0 8px}.proj input{width:150px}.s-head{gap:10px}}
 @media (max-width:1380px){#sInvite{display:none}.transport{gap:6px}}
+.soon{font:700 9px var(--f-m);letter-spacing:.08em;text-transform:uppercase;padding:2px 5px;border-radius:5px;background:rgba(127,127,127,.18);margin-left:4px;vertical-align:middle;opacity:.8}
 .linkish{background:none;border:0;padding:0;font:inherit;color:inherit;text-decoration:underline;cursor:pointer}
 .w-links{display:flex;gap:16px;align-items:center}
 .fb{position:fixed;right:16px;bottom:16px;z-index:85;height:38px;padding:0 16px;border-radius:999px;border:1px solid var(--line2);background:var(--g2);color:var(--text);font-weight:600;font-size:13px;box-shadow:0 10px 30px rgba(0,0,0,.4)}
@@ -454,7 +455,7 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 <section class="view" id="welcome" aria-label="Start">
   <header class="w-head">
     <span class="wm">RAW<i>.</i></span>
-    <nav class="w-nav" aria-label="Main"><a href="#" data-soon>Explore</a><a href="#" data-soon>Weekly drop</a><a href="#" data-soon>Sound library</a></nav>
+    <nav class="w-nav" aria-label="Main"><a href="#" data-soon="Explore opens with the public launch.">Explore <span class="soon">Soon</span></a><a href="#" data-soon="Weekly drops start with the public launch.">Weekly drop <span class="soon">Soon</span></a><a href="#" data-soon="The shared sound library opens with the public launch.">Sound library <span class="soon">Soon</span></a></nav>
     <div id="wAuth"></div>
   </header>
   <main class="w-main">
@@ -469,8 +470,8 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
     </form>
     <div class="w-modes">
       <button class="b on" type="button">Type it</button>
-      <button class="b" type="button" data-soon="Hum it arrives with RAW's own website, where the microphone is allowed.">Hum it</button>
-      <button class="b" type="button" data-soon="Voice memos arrive in V2.">Drop a voice memo</button>
+      <button class="b" type="button" id="wHum">Hum it</button>
+      <button class="b" type="button" data-soon="Voice memos are coming next. For now, Hum it or import audio in the studio.">Drop a voice memo <span class="soon">Soon</span></button>
       <span>You get four editable stems: drums, bass, chords, melody.</span>
     </div>
     <section style="display:flex;flex-direction:column;gap:14px">
@@ -517,7 +518,7 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
       <button data-win="piano" title="Piano roll (F7)">Piano roll<kbd>F7</kbd></button>
       <button data-win="mixer" title="Mixer (F9)">Mixer<kbd>F9</kbd></button>
     </nav>
-    <button class="b sm" id="sInvite" type="button" data-soon="Live sessions with collaborators are the next build: cursors, synced edits, comments and takes.">Invite</button>
+    <button class="b sm" id="sInvite" type="button" data-soon="Live sessions with collaborators are the next build: cursors, synced edits, comments and takes.">Invite <span class="soon">Soon</span></button>
     <button class="b sm" id="sSave" type="button">Save</button>
     <button class="b sm chrome" id="sExport" type="button">Export WAV</button>
     <button class="av" id="sAv" aria-label="Your profile"></button>
@@ -895,7 +896,7 @@ const AUDIO={};  // audio id -> AudioBuffer (kept in memory + IndexedDB)
 
 // ---------- audio runtime ----------
 let ctx=null,eng=null,playing=false,nextT=0,gPos=0,jump=false,timer=null,previewLoop=null;const queue=[];
-function ensureAudio(){if(!ctx){const AC=window.AudioContext||window.webkitAudioContext;ctx=new AC({latencyHint:'interactive'});eng=new Engine(ctx,true);}eng.applyMix(S);if(ctx.state==='suspended')ctx.resume();}
+function ensureAudio(){if(!ctx){const AC=window.AudioContext||window.webkitAudioContext;ctx=new AC({latencyHint:'interactive'});eng=new Engine(ctx,true);}if(S)eng.applyMix(S);if(ctx.state==='suspended')ctx.resume();}
 function effPatch(tr){
   const p=Object.assign({},tr.patch),m=tr.macros||defMac();
   p.sub=(p.sub||0)+(m.body-.5)*.6;p.gain=p.gain*(1+(m.body-.5)*.3);
@@ -1253,7 +1254,7 @@ function renderGenerate(){
   if(!S)return;
   const t=$('#gTitle');t.innerHTML='';const hl=new Set((S.heard||[]).flatMap(x=>x.toLowerCase().split(/\W+/)).filter(w=>w.length>3));
   (S.prompt||'').split(/(\s+)/).forEach(w=>t.append(hl.has(w.toLowerCase().replace(/\W/g,''))?h('em',{},w):w));
-  const st=$('#gStatus');st.innerHTML='';st.append(genBusy?h('span',{class:'busy-dot'},'Listening to your idea'):`Made by ${S.lastSrc==='built-in'?'RAW’s built-in composer':S.lastSrc}`);
+  const st=$('#gStatus');st.innerHTML='';st.append(genBusy?h('span',{class:'busy-dot'},'Listening to your idea'):`Made by ${S.lastSrc==='built-in'?'RAW’s built-in composer'+(lastAIError?' (AI unavailable: '+lastAIError.slice(0,80)+')':''):S.lastSrc}`);
   const hd=$('#gHeard');hd.innerHTML='';
   if(!genBusy){
     hd.append(h('span',{},'RAW heard:'));
@@ -1601,7 +1602,8 @@ function renderPiano(body,sub,st){
     S.clips.forEach(c=>{if(c.pattern===pat.id&&c.len===pat.len)c.len=n;});pat.len=n;persist();renderPlaylist();refreshWin('piano');});
   const ai=h('input',{placeholder:pat.kind==='drum'?'Write this beat: “half-time with rolling hats”':'Write this part: “a sad hook that climbs”','aria-label':'Describe the part',style:'flex:1;min-width:160px'});
   const aiBtn=h('button',{class:'b sm sig sq',type:'button',onclick:()=>writePart(ai.value,pat,tr,aiBtn)},'Write');ai.addEventListener('keydown',e=>{if(e.key==='Enter')writePart(ai.value,pat,tr,aiBtn);});
-  body.append(h('div',{class:'wtool'},psel,lsel,ai,aiBtn,h('button',{class:'b sm',type:'button',onclick:()=>{renamePattern(pat.id);}},'Rename'),h('button',{class:'b sm',type:'button',onclick:()=>{pushUndo();if(pat.kind==='drum')pat.drums=emptyDrums(pat.len);else pat.notes=[];persist();renderPlaylist();refreshWin('piano');}},'Clear')));
+  const humB=pat.kind==='synth'?h('button',{class:'b sm',type:'button',title:'Hum a line into this pattern',onclick:()=>humIntoPattern(pat,tr,humB)},'● Hum'):null;
+  body.append(h('div',{class:'wtool'},psel,lsel,ai,aiBtn,humB,h('button',{class:'b sm',type:'button',onclick:()=>{renamePattern(pat.id);}},'Rename'),h('button',{class:'b sm',type:'button',onclick:()=>{pushUndo();if(pat.kind==='drum')pat.drums=emptyDrums(pat.len);else pat.notes=[];persist();renderPlaylist();refreshWin('piano');}},'Clear')));
   if(pat.kind==='drum')body.append(stepSeq(pat,tr,st));else body.append(pianoGrid(pat,tr,st,body));
 }
 function stepSeq(pat,tr,st){
@@ -1656,7 +1658,7 @@ async function writePart(text,pat,tr,btn){
     o=pat.kind==='drum'?{rows:Object.fromEntries(Object.entries(g.drums).map(([k,v])=>[k,v.repeat(8)]))}:{notes:g[role].flatMap(n=>{const out=[];for(let r=0;r*32<pat.len;r++)out.push([n[0]+r*32,degToMidi(S,BASES[role]||48,n[1]),n[2]]);return out;})};}
   if(pat.kind==='drum'&&o.rows)for(const [k] of DRUM_ROWS.drums)pat.drums[k]=fit(o.rows[k],pat.len);
   if(pat.kind==='synth'&&o.notes)pat.notes=cleanMidi(o.notes,pat.len);
-  pushTake('Wrote '+pat.name);persist();renderPlaylist();refreshWin('piano');aiToast(`Wrote “${pat.name}” (${o&&src!=='built-in'?src:'built-in composer'}).`);
+  pushTake('Wrote '+pat.name);persist();renderPlaylist();refreshWin('piano');aiToast(src!=='built-in'?`Wrote “${pat.name}” (${src}).`:`Wrote “${pat.name}” with the built-in composer${lastAIError?' because the AI said: '+lastAIError:''}.`);
 }
 
 // ---------- channel rack ----------
@@ -1994,6 +1996,119 @@ function phoneGate(){
   $('#auth').classList.add('on');
 }
 document.addEventListener('click',e=>{const d=e.target.closest('[data-doc]');if(d){e.preventDefault();openDoc(d.dataset.doc);}});
+// ---------- Hum it: mic -> pitch -> notes on the 16th grid ----------
+function acfPitch(buf,sr){
+  let n=buf.length,rms=0;for(let i=0;i<n;i++)rms+=buf[i]*buf[i];rms=Math.sqrt(rms/n);if(rms<0.012)return -1;
+  let a=0,b=n-1;const th=0.2;for(let i=0;i<n/2;i++)if(Math.abs(buf[i])<th){a=i;break;}for(let i=1;i<n/2;i++)if(Math.abs(buf[n-i])<th){b=n-i;break;}
+  const x=buf.slice(a,b),m=x.length;if(m<64)return -1;const c=new Float32Array(m);
+  for(let lag=0;lag<m;lag++){let s=0;for(let j=0;j<m-lag;j++)s+=x[j]*x[j+lag];c[lag]=s;}
+  let d=0;while(d<m-1&&c[d]>c[d+1])d++;let mx=-1,T=-1;for(let i=d;i<m;i++)if(c[i]>mx){mx=c[i];T=i;}
+  if(T<=0||mx<c[0]*0.3)return -1;
+  const x1=c[T-1]||0,x2=c[T],x3=c[T+1]||0,A=(x1+x3-2*x2)/2,B=(x3-x1)/2;if(A)T=T-B/(2*A);
+  const f=sr/T;return f>70&&f<1100?f:-1;
+}
+const ftom=f=>69+12*Math.log2(f/440);
+function framesToNotes(frames,steps){ // frames: [{step,m}] m=-1 unvoiced
+  const per=Array.from({length:steps},()=>[]),cnt=new Array(steps).fill(0);
+  frames.forEach(f=>{if(f.step<0||f.step>=steps)return;cnt[f.step]++;if(f.m>0)per[f.step].push(f.m);});
+  const stepM=per.map((v,i)=>{if(!cnt[i]||v.length<cnt[i]*0.4)return null;v.sort((a,b)=>a-b);return v[Math.floor(v.length/2)];});
+  const notes=[];let cur=null;
+  for(let s=0;s<steps;s++){const m=stepM[s];
+    if(m==null){if(cur){notes.push(cur);cur=null;}continue;}
+    const r=Math.round(m);if(cur&&Math.abs(m-cur.raw)<=0.6){cur.len++;cur.sum+=m;cur.k++;cur.raw=cur.sum/cur.k;}else{if(cur)notes.push(cur);cur={s,len:1,raw:m,sum:m,k:1};}}
+  if(cur)notes.push(cur);
+  return notes.filter(n=>n.len>1||notes.length<4).map(n=>[n.s,Math.round(n.raw),n.len]);
+}
+function detectKey(notes){
+  const w=new Array(12).fill(0);notes.forEach(n=>w[((n[1]%12)+12)%12]+=n[2]);
+  let best={score:-1,key:0,scale:'minor'};
+  for(let k=0;k<12;k++)for(const sc of ['minor','major']){const iv=RAGAS[sc].iv;let s=0;for(let p=0;p<12;p++)if(iv.includes((p-k+12)%12))s+=w[p];s+=w[k]*.6+w[(k+7)%12]*.25;if(s>best.score)best={score:s,key:k,scale:sc};}
+  return best;
+}
+function snapToScale(m,key,scale){const iv=RAGAS[scale].iv;let best=m,bd=99;for(let d=-2;d<=2;d++){const pc=(((m+d-key)%12)+12)%12;if(iv.includes(pc)&&Math.abs(d)<bd){bd=Math.abs(d);best=m+d;}}return best;}
+function midiToDeg(m,key,scale,base){const iv=RAGAS[scale].iv,n=iv.length,rel=m-(base+key),o=Math.floor(rel/12),pc=((rel%12)+12)%12;
+  let idx=0,bd=99;iv.forEach((v,i)=>{const d=Math.abs(v-pc);if(d<bd){bd=d;idx=i;}});let deg=o*n+idx;while(deg<0)deg+=n;return Math.min(16,deg);}
+
+let humSess=null;
+async function recordHum({bars=2,bpm=90,onLevel,onNote,onStatus}){
+  ensureAudio();if(ctx.state==='suspended')await ctx.resume();
+  let stream;try{stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});}
+  catch(e){throw new Error(e&&e.name==='NotAllowedError'?'mic-blocked':'no-mic');}
+  const src=ctx.createMediaStreamSource(stream),an=ctx.createAnalyser();an.fftSize=2048;src.connect(an);
+  const sd=60/bpm/4,steps=bars*16,beat=60/bpm,t0=ctx.currentTime+.15,rec0=t0+4*beat,end=rec0+steps*sd;
+  const click=(t,hi)=>{const o=ctx.createOscillator(),g=ctx.createGain();o.frequency.value=hi?1600:1000;g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(.35,t+.002);g.gain.exponentialRampToValueAtTime(.0001,t+.06);o.connect(g);g.connect(ctx.destination);o.start(t);o.stop(t+.08);};
+  for(let i=0;i<4+bars*4;i++)click(t0+i*beat,i%4===0);
+  const buf=new Float32Array(an.fftSize),frames=[];
+  return await new Promise(resolve=>{
+    humSess={stop:false};
+    const loop=()=>{const now=ctx.currentTime;
+      if(humSess.stop||now>=end){stream.getTracks().forEach(t=>t.stop());src.disconnect();humSess=null;resolve(framesToNotes(frames,steps));return;}
+      an.getFloatTimeDomainData(buf);let r=0;for(let i=0;i<buf.length;i+=4)r+=buf[i]*buf[i];onLevel&&onLevel(Math.min(1,Math.sqrt(r/(buf.length/4))*6));
+      if(now<rec0){onStatus&&onStatus('Count-in '+(4-Math.floor((now-t0)/beat)),0);}
+      else{const f=acfPitch(buf,ctx.sampleRate),m=f>0?ftom(f):-1,step=Math.floor((now-rec0)/sd);frames.push({step,m});onStatus&&onStatus('Hum now',(now-rec0)/(end-rec0));onNote&&onNote(m>0?midiName(Math.round(m)):'');}
+      requestAnimationFrame(loop);};
+    requestAnimationFrame(loop);
+  });
+}
+function humErrorText(e){return e.message==='mic-blocked'?'Microphone access was blocked. Click the lock icon in the address bar, allow the microphone, then try again.':'RAW couldn’t reach a microphone here. Hum it works on RAW’s website in Chrome, Edge or Safari with a mic connected.';}
+
+// Welcome: hum a melody, RAW builds the track around it
+function openHum(){
+  const c=$('#authCard');c.innerHTML='';let notes=null,bpm=90;
+  const bpmIn=h('input',{type:'text',id:'humBpm',value:String(bpm),inputmode:'numeric',style:'width:90px'});
+  const lvl=h('i',{style:'display:block;height:100%;width:0;background:#FF5A1F;border-radius:4px;transition:width .05s'}),prog=h('i',{style:'display:block;height:100%;width:0;background:#111;border-radius:4px'});
+  const st=h('b',{style:'font-size:22px;min-height:30px;font-family:var(--f-d);font-stretch:125%;text-transform:uppercase'},'Ready'),nt=h('span',{style:'font:600 15px var(--f-m);color:#3A3732;min-height:20px'},'');
+  const res=h('div',{});
+  const recB=h('button',{class:'next sig',type:'button'},'Record 2 bars');
+  const desc=h('input',{type:'text',id:'humDesc',placeholder:'Optional vibe: “lofi, rainy, warm keys”'});
+  c.append(h('h2',{class:'disp',id:'authTitle'},'Hum it'),h('p',{},'You’ll hear four clicks, then hum or sing your idea for two bars. RAW turns it into notes and builds drums, bass and chords around it.'),
+    h('div',{style:'display:flex;gap:10px;align-items:center'},h('label',{for:'humBpm'},'Tempo (BPM)'),bpmIn),
+    h('label',{for:'humDesc'},'Describe the vibe (optional)'),desc,
+    h('div',{style:'display:flex;flex-direction:column;gap:6px;padding:14px;border-radius:14px;background:#EDE7DD'},st,nt,
+      h('div',{style:'height:8px;border-radius:4px;background:rgba(17,17,17,.1);overflow:hidden'},lvl),h('div',{style:'height:4px;border-radius:4px;background:rgba(17,17,17,.1);overflow:hidden'},prog)),
+    res,recB,h('button',{class:'ghost',type:'button',onclick:()=>{if(humSess)humSess.stop=true;closeAuth();}},'Cancel'));
+  recB.addEventListener('click',async()=>{
+    bpm=clamp(Math.round(+bpmIn.value||90),60,160);bpmIn.value=bpm;recB.disabled=true;res.innerHTML='';
+    try{notes=await recordHum({bars:2,bpm,onLevel:v=>lvl.style.width=Math.round(v*100)+'%',onNote:n=>nt.textContent=n?'Hearing '+n:'',onStatus:(t,p)=>{st.textContent=t;prog.style.width=Math.round(p*100)+'%';}});}
+    catch(e){st.textContent='No microphone';res.append(h('div',{class:'note-box'},humErrorText(e)));recB.disabled=false;return;}
+    recB.disabled=false;lvl.style.width='0';
+    if(!notes.length){st.textContent='Didn’t catch that';res.append(h('div',{class:'note-box'},'RAW heard no clear pitch. Hum a little louder and closer to the mic, with one note at a time.'));recB.textContent='Try again';return;}
+    const k=detectKey(notes);st.textContent=`Heard ${notes.length} notes`;nt.textContent=`Sounds like ${NOTE_NAMES[k.key]} ${RAGAS[k.scale].name.toLowerCase()}`;
+    recB.textContent='Record again';recB.className='ghost';
+    res.append(h('div',{style:'display:flex;gap:8px'},h('button',{class:'next',type:'button',style:'flex:1',onclick:()=>previewHum(notes,bpm)},'Play it back'),
+      h('button',{class:'next sig',type:'button',style:'flex:1.4',onclick:()=>{closeAuth();track('hum',{notes:notes.length});startGenerateFromHum(notes,bpm,k,desc.value.trim());}},'Build my track')));
+  });
+  $('#auth').classList.add('on');
+}
+function previewHum(notes,bpm){ensureAudio();const sd=60/bpm/4,t=ctx.currentTime+.05,p=normPatch(PRESETS.flute);notes.forEach(n=>playSynth(ctx,eng.masterIn,p,n[1],t+n[0]*sd,n[2]*sd*.95,.8));}
+async function startGenerateFromHum(raw,bpm,k,vibe){
+  const text=vibe||'a track built around my hummed melody';
+  S=newProject();S.prompt=vibe?vibe+' (from a hummed melody)':'Built from a hummed melody';S.title='Hummed Idea';S.bpm=bpm;S.key=k.key;S.scale=k.scale;
+  // centre the melody in the lead register, snap to the detected scale
+  const ms=raw.map(n=>n[1]).sort((a,b)=>a-b),med=ms[Math.floor(ms.length/2)],shift=Math.round((67-med)/12)*12;
+  const mel=raw.map(n=>[n[0],snapToScale(n[1]+shift,k.key,k.scale),n[2]]);
+  const lowest=Math.min(...mel.map(n=>n[1])),below=Math.floor((lowest-(60+k.key))/12);if(below<0)mel.forEach(n=>n[1]-=below*12);
+  S.core.melody=cleanDeg(mel.map(n=>[n[0],midiToDeg(n[1],k.key,k.scale,60),n[2]]));
+  stemBusy={drums:true,bass:true,chords:true,melody:false};genBusy=true;undoBuf=[];go('generate');
+  const prompt=genPrompt(text)+`\nIMPORTANT: The melody is already written (hummed by the user). Keep it exactly: "melody": ${JSON.stringify(S.core.melody)}. Use bpm ${bpm}, key ${NOTE_NAMES[k.key]}, scale ${k.scale}. Write drums, bass and chords that support this melody.`;
+  let o=await askAI(prompt),src=lastProvider;if(!o){o=offlineGen(text);src='built-in';}
+  const keepMel=deep(S.core.melody);applyGen(o);S.core.melody=keepMel;S.bpm=bpm;S.key=k.key;S.scale=k.scale;S.title=(o.title&&src!=='built-in')?String(o.title).slice(0,40):'Hummed Idea';
+  if(o.kit&&KITS[o.kit])trackByRole(S,'drums').kit=o.kit;
+  S.heard=['hummed melody',`${NOTE_NAMES[k.key]} ${k.scale}`,...(S.heard||[]).slice(0,3)];S.lastSrc=src;genBusy=false;
+  for(const id of ['drums','bass','chords']){await new Promise(r=>setTimeout(r,260));stemBusy[id]=false;renderGenerate();}
+  buildTimeline();pushTake('Take A');persist();renderGenerate();play({loop:DROP_LOOP});
+}
+// Piano roll: hum straight into the selected pattern
+async function humIntoPattern(pat,tr,btn){
+  const bars=Math.min(4,pat.len/16);btn.disabled=true;const label=btn.textContent;
+  try{const raw=await recordHum({bars,bpm:S.bpm,onStatus:t=>btn.textContent=t});
+    if(!raw.length){toast('RAW heard no clear pitch. Hum louder, closer to the mic.');return;}
+    const base=(tr&&tr.base?tr.base:48)+12,ms=raw.map(n=>n[1]).sort((a,b)=>a-b),med=ms[Math.floor(ms.length/2)],shift=Math.round((base+7-med)/12)*12;
+    pushUndo();pat.notes=cleanMidi(raw.map(n=>[n[0],snapToScale(n[1]+shift,S.key,S.scale),n[2]]),pat.len);
+    pushTake('Hummed '+pat.name);persist();renderPlaylist();refreshWin('piano');aiToast(`Hummed ${raw.length} notes into “${pat.name}”, snapped to ${NOTE_NAMES[S.key]} ${RAGAS[S.scale].name}.`);track('hum_pattern');
+  }catch(e){toast(humErrorText(e));}
+  finally{btn.disabled=false;btn.textContent=label;}
+}
 // ---------- misc ----------
 let toastT;function toast(t){const el=$('#toast');el.textContent=t;el.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>el.classList.remove('show'),2800);}
 
@@ -2006,7 +2121,7 @@ async function start(data){
   (async()=>{try{if(window.claude&&window.claude.use){sampleFn=await window.claude.use('sample');downloads=await window.claude.use('downloads');}}catch(e){}})();
   window.claude?.hot?.snapshot?.(()=>({S,view}));
   go((data&&data.view&&S)?data.view:'welcome');track('visit',{phone:isPhone()});
-  $('#fbBtn').addEventListener('click',openFeedback);
+  $('#fbBtn').addEventListener('click',openFeedback);$('#wHum').addEventListener('click',openHum);
   requestAnimationFrame(frame);
   window.__raw={get S(){return S;},startGenerate,go,exportWav,openWin,closeWin,drawClipAt,duplicateClip,addTrack,scheduleStep,importAudioFiles};
 }
