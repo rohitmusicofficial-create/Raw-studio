@@ -832,7 +832,8 @@ function zipStore(files){ // [{name, data:Uint8Array}]
 </script>
 <script>
 // ================= RAW app (timeline build) =================
-const CFG=window.RAW_CONFIG||{};
+const ON_SITE=!!document.querySelector('script[src="config.js"]');
+const CFG=Object.assign({aiEndpoint:ON_SITE?'/api/compose':''},window.RAW_CONFIG||{});
 const STEPS=32;
 const BASES={bass:36,chords:48,melody:60};
 const KITS={concrete:{name:'Concrete kit',tune:0,decay:1},tape:{name:'Tape kit',tune:-3,decay:1.35},glass:{name:'Glass kit',tune:4,decay:.7},boom:{name:'Boom kit',tune:-6,decay:1.7}};
@@ -1808,7 +1809,7 @@ function renderWelcome(){
   const a=$('#wAuth');a.innerHTML='';
   if(profile)a.append(h('div',{style:'display:flex;gap:10px;align-items:center'},S?h('button',{class:'b',type:'button',style:'border-color:rgba(17,17,17,.25);color:#111',onclick:()=>go('studio')},'Back to studio'):null,avatarBtn(()=>go('profile'))));
   else a.append(h('button',{class:'b',type:'button',style:'height:44px;border-color:rgba(17,17,17,.25);color:#111',onclick:()=>openAuth(()=>go(S?'studio':'welcome'))},'Sign in'));
-  $('#wMode').textContent=sb?'Live':'Preview build';
+  {const m=$('#wMode');m.innerHTML='';const t=sb?'Live':ON_SITE?(window.RAW_CONFIG?'Preview: sign-in not connected':'Preview: config.js not found'):'Preview build';m.append(ON_SITE?h('a',{href:'status.html',style:'color:inherit'},t+' · check status'):t);}
 }
 function avatarBtn(onclick,id){const b=h('button',{class:'av',type:'button','aria-label':'Your profile',onclick});fillAvatar(b);if(id)b.id=id;return b;}
 function initials(n){return (n||'?').split(/\s+/).map(w=>w[0]).join('').slice(0,2).toUpperCase();}
@@ -2022,7 +2023,7 @@ function framesToNotes(frames,steps){ // frames: [{step,m}] m=-1 unvoiced
 function detectKey(notes){
   const w=new Array(12).fill(0);notes.forEach(n=>w[((n[1]%12)+12)%12]+=n[2]);
   let best={score:-1,key:0,scale:'minor'};
-  for(let k=0;k<12;k++)for(const sc of ['minor','major']){const iv=RAGAS[sc].iv;let s=0;for(let p=0;p<12;p++)if(iv.includes((p-k+12)%12))s+=w[p];s+=w[k]*.6+w[(k+7)%12]*.25;if(s>best.score)best={score:s,key:k,scale:sc};}
+  for(let k=0;k<12;k++)for(const sc of ['minor','major']){const iv=RAGAS[sc].iv;let s=0;for(let p=0;p<12;p++)s+=iv.includes((p-k+12)%12)?w[p]:-1.2*w[p];s+=w[k]*.6+w[(k+7)%12]*.25;if(notes.length){const tot=w.reduce((a,b)=>a+b,0)||1;if(((notes[0][1]%12)+12)%12===k)s+=tot*.03;if(((notes[notes.length-1][1]%12)+12)%12===k)s+=tot*.05;}if(s>best.score)best={score:s,key:k,scale:sc};}
   return best;
 }
 function snapToScale(m,key,scale){const iv=RAGAS[scale].iv;let best=m,bd=99;for(let d=-2;d<=2;d++){const pc=(((m+d-key)%12)+12)%12;if(iv.includes(pc)&&Math.abs(d)<bd){bd=Math.abs(d);best=m+d;}}return best;}
@@ -2052,51 +2053,219 @@ async function recordHum({bars=2,bpm=90,onLevel,onNote,onStatus}){
 }
 function humErrorText(e){return e.message==='mic-blocked'?'Microphone access was blocked. Click the lock icon in the address bar, allow the microphone, then try again.':'RAW couldn’t reach a microphone here. Hum it works on RAW’s website in Chrome, Edge or Safari with a mic connected.';}
 
-// Welcome: hum a melody, RAW builds the track around it
-function openHum(){
-  const c=$('#authCard');c.innerHTML='';let notes=null,bpm=90;
-  const bpmIn=h('input',{type:'text',id:'humBpm',value:String(bpm),inputmode:'numeric',style:'width:90px'});
-  const lvl=h('i',{style:'display:block;height:100%;width:0;background:#FF5A1F;border-radius:4px;transition:width .05s'}),prog=h('i',{style:'display:block;height:100%;width:0;background:#111;border-radius:4px'});
-  const st=h('b',{style:'font-size:22px;min-height:30px;font-family:var(--f-d);font-stretch:125%;text-transform:uppercase'},'Ready'),nt=h('span',{style:'font:600 15px var(--f-m);color:#3A3732;min-height:20px'},'');
-  const res=h('div',{});
-  const recB=h('button',{class:'next sig',type:'button'},'Record 2 bars');
-  const desc=h('input',{type:'text',id:'humDesc',placeholder:'Optional vibe: “lofi, rainy, warm keys”'});
-  c.append(h('h2',{class:'disp',id:'authTitle'},'Hum it'),h('p',{},'You’ll hear four clicks, then hum or sing your idea for two bars. RAW turns it into notes and builds drums, bass and chords around it.'),
-    h('div',{style:'display:flex;gap:10px;align-items:center'},h('label',{for:'humBpm'},'Tempo (BPM)'),bpmIn),
-    h('label',{for:'humDesc'},'Describe the vibe (optional)'),desc,
-    h('div',{style:'display:flex;flex-direction:column;gap:6px;padding:14px;border-radius:14px;background:#EDE7DD'},st,nt,
-      h('div',{style:'height:8px;border-radius:4px;background:rgba(17,17,17,.1);overflow:hidden'},lvl),h('div',{style:'height:4px;border-radius:4px;background:rgba(17,17,17,.1);overflow:hidden'},prog)),
-    res,recB,h('button',{class:'ghost',type:'button',onclick:()=>{if(humSess)humSess.stop=true;closeAuth();}},'Cancel'));
-  recB.addEventListener('click',async()=>{
-    bpm=clamp(Math.round(+bpmIn.value||90),60,160);bpmIn.value=bpm;recB.disabled=true;res.innerHTML='';
-    try{notes=await recordHum({bars:2,bpm,onLevel:v=>lvl.style.width=Math.round(v*100)+'%',onNote:n=>nt.textContent=n?'Hearing '+n:'',onStatus:(t,p)=>{st.textContent=t;prog.style.width=Math.round(p*100)+'%';}});}
-    catch(e){st.textContent='No microphone';res.append(h('div',{class:'note-box'},humErrorText(e)));recB.disabled=false;return;}
-    recB.disabled=false;lvl.style.width='0';
-    if(!notes.length){st.textContent='Didn’t catch that';res.append(h('div',{class:'note-box'},'RAW heard no clear pitch. Hum a little louder and closer to the mic, with one note at a time.'));recB.textContent='Try again';return;}
-    const k=detectKey(notes);st.textContent=`Heard ${notes.length} notes`;nt.textContent=`Sounds like ${NOTE_NAMES[k.key]} ${RAGAS[k.scale].name.toLowerCase()}`;
-    recB.textContent='Record again';recB.className='ghost';
-    res.append(h('div',{style:'display:flex;gap:8px'},h('button',{class:'next',type:'button',style:'flex:1',onclick:()=>previewHum(notes,bpm)},'Play it back'),
-      h('button',{class:'next sig',type:'button',style:'flex:1.4',onclick:()=>{closeAuth();track('hum',{notes:notes.length});startGenerateFromHum(notes,bpm,k,desc.value.trim());}},'Build my track')));
+// ===== Hum it v2: free recording (up to 5 min) -> pitch + tempo + key -> confirm -> studio =====
+const HUM_MAX=300; // seconds
+async function recordFree({onLevel,onNote,onTime}){
+  ensureAudio();if(ctx.state==='suspended')await ctx.resume();
+  let stream;try{stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});}
+  catch(e){throw new Error(e&&e.name==='NotAllowedError'?'mic-blocked':'no-mic');}
+  const src=ctx.createMediaStreamSource(stream),an=ctx.createAnalyser();an.fftSize=2048;src.connect(an);
+  const sp=ctx.createScriptProcessor(4096,1,1),mute=ctx.createGain();mute.gain.value=0;src.connect(sp);sp.connect(mute);mute.connect(ctx.destination);
+  const chunks=[];let n=0;const sr=ctx.sampleRate,maxN=HUM_MAX*sr;
+  sp.onaudioprocess=e=>{if(n>=maxN)return;const d=e.inputBuffer.getChannelData(0);chunks.push(new Float32Array(d));n+=d.length;};
+  const t0=ctx.currentTime,buf=new Float32Array(an.fftSize);
+  return await new Promise(resolve=>{
+    humSess={stop:false};
+    const loop=()=>{const el=ctx.currentTime-t0;
+      if(humSess.stop||el>=HUM_MAX||n>=maxN){sp.onaudioprocess=null;try{sp.disconnect();src.disconnect();mute.disconnect();}catch(e){}stream.getTracks().forEach(t=>t.stop());humSess=null;
+        const pcm=new Float32Array(n);let o=0;for(const c of chunks){pcm.set(c.subarray(0,Math.min(c.length,n-o)),o);o+=c.length;if(o>=n)break;}resolve({pcm,sr});return;}
+      an.getFloatTimeDomainData(buf);let r=0;for(let i=0;i<buf.length;i+=4)r+=buf[i]*buf[i];onLevel&&onLevel(Math.min(1,Math.sqrt(r/(buf.length/4))*6));
+      const f=acfPitch(buf,sr);onNote&&onNote(f>0?midiName(Math.round(ftom(f))):'');onTime&&onTime(el);
+      requestAnimationFrame(loop);};
+    requestAnimationFrame(loop);
   });
-  $('#auth').classList.add('on');
 }
-function previewHum(notes,bpm){ensureAudio();const sd=60/bpm/4,t=ctx.currentTime+.05,p=normPatch(PRESETS.flute);notes.forEach(n=>playSynth(ctx,eng.masterIn,p,n[1],t+n[0]*sd,n[2]*sd*.95,.8));}
-async function startGenerateFromHum(raw,bpm,k,vibe){
-  const text=vibe||'a track built around my hummed melody';
-  S=newProject();S.prompt=vibe?vibe+' (from a hummed melody)':'Built from a hummed melody';S.title='Hummed Idea';S.bpm=bpm;S.key=k.key;S.scale=k.scale;
-  // centre the melody in the lead register, snap to the detected scale
-  const ms=raw.map(n=>n[1]).sort((a,b)=>a-b),med=ms[Math.floor(ms.length/2)],shift=Math.round((67-med)/12)*12;
-  const mel=raw.map(n=>[n[0],snapToScale(n[1]+shift,k.key,k.scale),n[2]]);
-  const lowest=Math.min(...mel.map(n=>n[1])),below=Math.floor((lowest-(60+k.key))/12);if(below<0)mel.forEach(n=>n[1]-=below*12);
-  S.core.melody=cleanDeg(mel.map(n=>[n[0],midiToDeg(n[1],k.key,k.scale,60),n[2]]));
-  stemBusy={drums:true,bass:true,chords:true,melody:false};genBusy=true;undoBuf=[];go('generate');
-  const prompt=genPrompt(text)+`\nIMPORTANT: The melody is already written (hummed by the user). Keep it exactly: "melody": ${JSON.stringify(S.core.melody)}. Use bpm ${bpm}, key ${NOTE_NAMES[k.key]}, scale ${k.scale}. Write drums, bass and chords that support this melody.`;
-  let o=await askAI(prompt),src=lastProvider;if(!o){o=offlineGen(text);src='built-in';}
-  const keepMel=deep(S.core.melody);applyGen(o);S.core.melody=keepMel;S.bpm=bpm;S.key=k.key;S.scale=k.scale;S.title=(o.title&&src!=='built-in')?String(o.title).slice(0,40):'Hummed Idea';
-  if(o.kit&&KITS[o.kit])trackByRole(S,'drums').kit=o.kit;
-  S.heard=['hummed melody',`${NOTE_NAMES[k.key]} ${k.scale}`,...(S.heard||[]).slice(0,3)];S.lastSrc=src;genBusy=false;
-  for(const id of ['drums','bass','chords']){await new Promise(r=>setTimeout(r,260));stemBusy[id]=false;renderGenerate();}
-  buildTimeline();pushTake('Take A');persist();renderGenerate();play({loop:DROP_LOOP});
+const mmss=s=>{s=Math.max(0,Math.floor(s));return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');};
+// YIN pitch track on a downsampled copy (~8 kHz). Returns frames {t, m (NaN unvoiced), r}
+async function pitchTrack(pcm,sr,onProg){
+  const D=Math.max(1,Math.round(sr/8000)),fs=sr/D,N=Math.floor(pcm.length/D),x=new Float32Array(N);
+  for(let i=0;i<N;i++){let s=0;for(let j=0;j<D;j++)s+=pcm[i*D+j];x[i]=s/D;}
+  let pk=0;for(let i=0;i<N;i++)pk=Math.max(pk,Math.abs(x[i]));
+  const W=256,hop=Math.round(fs*0.02),minL=Math.floor(fs/900),maxL=Math.ceil(fs/70),frames=[],dd=new Float32Array(maxL+2);
+  const gate=Math.max(0.006,pk*0.06);
+  for(let s=0,k=0;s+W+maxL<N;s+=hop,k++){
+    if(k%400===0){onProg&&onProg(s/N);await new Promise(r=>setTimeout(r,0));}
+    let r=0;for(let j=0;j<W;j++)r+=x[s+j]*x[s+j];r=Math.sqrt(r/W);
+    const t=(s+W/2)/fs;if(r<gate){frames.push({t,m:NaN,r});continue;}
+    let run=0,T=-1;dd[0]=1;
+    for(let tau=1;tau<=maxL;tau++){let d=0;for(let j=0;j<W;j++){const v=x[s+j]-x[s+j+tau];d+=v*v;}run+=d;dd[tau]=run?d*tau/run:1;}
+    for(let tau=minL;tau<maxL;tau++){if(dd[tau]<0.18){while(tau+1<maxL&&dd[tau+1]<dd[tau])tau++;T=tau;break;}}
+    if(T<0){frames.push({t,m:NaN,r});continue;}
+    const a=dd[T-1],b=dd[T],c=dd[T+1],den=a+c-2*b,tt=den?T+(a-c)/(2*den):T;
+    frames.push({t,m:ftom(fs/tt),r});
+  }
+  // median smooth voiced pitch over 5 frames
+  const m=frames.map(f=>f.m);
+  frames.forEach((f,i)=>{if(isNaN(f.m))return;const w=[];for(let j=i-2;j<=i+2;j++)if(j>=0&&j<m.length&&!isNaN(m[j]))w.push(m[j]);w.sort((p,q)=>p-q);f.m=w[w.length>>1];});
+  return {frames,hop:hop/fs};
+}
+// frames -> notes in seconds [{t,d,m}]
+function segmentNotes(frames,hop){
+  const notes=[],med=a=>{const s=a.slice().sort((p,q)=>p-q);return s[s.length>>1];};
+  let cur=null,dev=0,gap=0;
+  const close=()=>{if(cur&&cur.ms.length*hop>=0.08)notes.push({t:cur.t,d:(cur.end-cur.t),m:med(cur.ms)});cur=null;dev=0;};
+  for(let i=0;i<frames.length;i++){const f=frames[i];
+    if(isNaN(f.m)){gap++;if(cur&&gap>2)close();continue;}
+    const onset=i>=3&&frames[i-3].r>0&&f.r>frames[i-3].r*1.9&&cur&&cur.ms.length>4;
+    if(!cur||onset){close();cur={t:f.t-hop/2,end:f.t+hop/2,ms:[f.m]};gap=0;continue;}
+    gap=0;const c=med(cur.ms.slice(-8));
+    if(Math.abs(f.m-c)>0.7){dev++;if(dev>=3){const back=frames[i-2];cur.ms.splice(-2);cur.end=back.t-hop/2;close();cur={t:back.t-hop/2,end:f.t+hop/2,ms:[frames[i-2].m,frames[i-1].m,f.m]};}else{cur.end=f.t+hop/2;}continue;}
+    dev=0;cur.ms.push(f.m);cur.end=f.t+hop/2;}
+  close();
+  // merge tiny same-pitch gaps
+  const out=[];for(const n of notes){const p=out[out.length-1];if(p&&Math.round(p.m)===Math.round(n.m)&&n.t-(p.t+p.d)<0.035){p.d=n.t+n.d-p.t;}else out.push(n);}
+  return out;
+}
+// tempo from inter-onset intervals, drift-tolerant (no fixed phase)
+function detectTempo(notes){
+  if(notes.length<4)return 90;
+  const ioi=[];for(let i=1;i<notes.length;i++){const d=notes[i].t-notes[i-1].t;if(d>0.09&&d<2.4)ioi.push(d);}
+  if(ioi.length<3)return 90;
+  let best=90,bs=1e9;
+  for(let bpm=60;bpm<=180;bpm+=0.5){const p=60/bpm/2;let e=0;for(const d of ioi){const q=d/p,r=Math.max(1,Math.round(q));e+=((q-r)/Math.min(r,2))**2;}
+    e/=ioi.length;const pr=0.035*Math.log2(bpm/100)**2;if(e+pr<bs){bs=e+pr;best=bpm;}}
+  return Math.round(best);
+}
+// relative quantization to 16ths: survives tempo drift over minutes
+function quantizeHum(notes,bpm){
+  const p=60/bpm/4,out=[];if(!notes.length)return out;let step=0;
+  for(let i=0;i<notes.length;i++){const n=notes[i];if(i>0){step+=Math.max(1,Math.round((n.t-notes[i-1].t)/p));}
+    const next=i+1<notes.length?step+Math.max(1,Math.round((notes[i+1].t-n.t)/p)):Infinity;
+    out.push([step,Math.round(n.m),clamp(Math.max(1,Math.round(n.d/p)),1,Math.min(32,next-step))]);}
+  return out;
+}
+function humToMelody(q,key,scale){ // centre in the lead register, snap to the scale
+  if(!q.length)return [];const ms=q.map(n=>n[1]).sort((a,b)=>a-b),med=ms[ms.length>>1],shift=Math.round((67-med)/12)*12;
+  return q.map(n=>[n[0],snapToScale(n[1]+shift,key,scale),n[2]]);
+}
+// pick a diatonic triad per bar from the melody notes in it
+function harmonize(mel,bars,key,scale){
+  const iv=RAGAS[scale].iv,n=iv.length,prog=[];let prev=0;
+  if(n<5){return new Array(bars).fill(0);}
+  const prior={0:.15,3:.1,4:.11,5:.08,1:.02,2:.02,6:0};
+  for(let b=0;b<bars;b++){const w=new Array(12).fill(0);let tot=0;
+    for(const [s,m,l] of mel){const a=Math.max(s,b*16),e=Math.min(s+l,b*16+16);if(e<=a)continue;let wt=e-a;if(a===b*16)wt*=1.6;else if((a-b*16)%4===0)wt*=1.2;w[((m%12)+12)%12]+=wt;tot+=wt;}
+    if(!tot){prog.push(prev);continue;}
+    let best=0,bs=-1e9;
+    for(let d=0;d<n;d++){const pcs=[d,d+2,d+4].map(k=>(key+iv[k%n]+12*Math.floor(k/n))%12);
+      let sc=0;for(let pc=0;pc<12;pc++){if(!w[pc])continue;sc+=pcs.includes(pc)?w[pc]*(pc===pcs[0]?1.25:1):-w[pc]*.7;}
+      const fifth=((pcs[2]-pcs[0])%12+12)%12;sc=sc/tot+(prior[d]||0)-(fifth!==7?.2:0)+(d===prev?.05:0);if(b===0&&d===0)sc+=.2;if(sc>bs){bs=sc;best=d;}}
+    prog.push(best);prev=best;}
+  return prog;
+}
+function humDrumsOffline(bpm,vibe){
+  const t=(vibe||'').toLowerCase();
+  const st=/trap|drill|dark/.test(t)||bpm>=132?'trap':/house|club|dance/.test(t)||(bpm>=116&&bpm<132)?'house':/lofi|chill|jazz|rain/.test(t)||bpm<88?'lofi':/film|cinematic|ambient/.test(t)?'cinematic':'pop';
+  const d=STYLES[st].d;return {style:st,kit:STYLES[st].kit,drums:Object.fromEntries(Object.entries(d).map(([k,p])=>[k,p+p])),p:STYLES[st].p};
+}
+async function buildFromHum(H){
+  const {bpm,key,scale,vibe}=H,mel=humToMelody(H.q,key,scale);
+  const last=Math.max(16,...mel.map(n=>n[0]+n[2])),bars=Math.ceil(last/16),Lm=bars*16;
+  S=newProject();Object.assign(S,{bpm,key,scale,swing:bpm<95?.12:.05,title:'Hummed Idea',prompt:(vibe?vibe+' · ':'')+'built from a hummed melody',heard:['hummed melody',`${NOTE_NAMES[key]} ${scale}`,bpm+' bpm']});
+  // AI only picks drums, sounds and a title; the melody and harmony come from the hum
+  let off=humDrumsOffline(bpm,vibe),src='built-in',o=null;
+  const prog=harmonize(mel,bars,key,scale);
+  const deg=d=>['I','II','III','IV','V','VI','VII'][d]||'I';
+  const ask=`You are RAW, a music producer. A user hummed a melody. Tempo ${bpm} BPM, key ${NOTE_NAMES[key]} ${scale}, ${bars} bars, chord degrees per bar: ${prog.slice(0,16).map(deg).join(' ')}. ${vibe?'Vibe: '+vibe+'.':'Pick a vibe that suits the tempo.'}
+Return ONLY JSON: {"title":"2-3 word title","kit":"concrete|tape|glass|boom","heard":["3 short tags"],"drums":{"kick":"32 chars","snare":"32","clap":"32","hatC":"32","hatO":"32","rim":"32"},"patches":{"bass":PATCH,"chords":PATCH,"melody":PATCH}}
+Drum strings use x (hit), o (ghost), . (rest), one char per 16th, 2 bars. Leave space for the melody. ${PATCH_DOC}`;
+  o=await askAI(ask);if(o)src=lastProvider;
+  const drums={};for(const [k] of DRUM_ROWS.drums){const v=o&&o.drums&&typeof o.drums[k]==='string'&&/[xo]/.test(o.drums.kick||'')?o.drums[k]:off.drums[k];drums[k]=fit(v,32);}
+  const dr=trackByRole(S,'drums');dr.kit=(o&&KITS[o.kit])?o.kit:off.kit;
+  const pt=(o&&o.patches)||{};
+  trackByRole(S,'bass').patch=normPatch(Object.assign({},PRESETS[off.p[0]],pt.bass||{}));
+  trackByRole(S,'chords').patch=normPatch(Object.assign({},PRESETS[off.p[1]],pt.chords||{}));
+  const ml=trackByRole(S,'melody');ml.patch=normPatch(Object.assign({},PRESETS.flute,pt.melody||{}));ml.vol=.78;ml.del=.15;
+  if(o&&o.title)S.title=String(o.title).slice(0,40);if(o&&Array.isArray(o.heard))S.heard=['hummed melody',`${NOTE_NAMES[key]} ${scale}`,...o.heard.slice(0,3).map(x=>String(x).slice(0,24))];
+  S.lastSrc=src;
+  // patterns, 8 bars (128 steps) each
+  const P={},C=[],add=(track,pattern,start,len)=>C.push({id:uid(),track,pattern,start,len,off:0});
+  const chordAt=(d,base)=>[0,2,4].map(k=>degToMidi(S,base,d+k));
+  const parts=Math.ceil(Lm/128);
+  for(let i=0;i<parts;i++){const a=i*128,L=Math.min(128,Lm-a),tag=parts>1?' · part '+(i+1):'';
+    const pm=mkPattern('synth','Hum melody'+tag,L);pm.notes=cleanMidi(mel.filter(n=>n[0]>=a&&n[0]<a+L).map(n=>[n[0]-a,n[1],Math.min(n[2],a+L-n[0])]),L);P[pm.id]=pm;add('melody',pm.id,a,L);
+    const pc=mkPattern('synth','Chords'+tag,L),pb=mkPattern('synth','Bass'+tag,L);
+    for(let b=0;b<L/16;b++){const d=prog[a/16+b],s=b*16;
+      chordAt(d,48).forEach(m=>pc.notes.push([s,m,15]));
+      const r=degToMidi(S,36,d),f=degToMidi(S,36,d+4);pb.notes.push([s,r,7],[s+8,r,4],[s+12,f,3]);}
+    pc.notes=cleanMidi(pc.notes,L);pb.notes=cleanMidi(pb.notes,L);P[pc.id]=pc;P[pb.id]=pb;add('chords',pc.id,a,L);
+    const bStart=bars>=8?64:0;if(a+L>bStart)add('bass',pb.id,a,L);}
+  const pd=mkPattern('drum','Drums · groove',32);pd.drums=drums;P[pd.id]=pd;
+  const dStart=bars>=8?64:0;if(Lm>dStart)add('drums',pd.id,dStart,Lm-dStart);
+  // ending: one held tonic chord
+  const pe=mkPattern('synth','Chords · end',16);pe.notes=cleanMidi(chordAt(0,48).map(m=>[0,m,16]),16);P[pe.id]=pe;add('chords',pe.id,Lm,16);
+  S.patterns=P;S.clips=C;
+  // legacy core (used by the command bar)
+  S.core={drums,melody:cleanDeg(mel.filter(n=>n[0]<32).map(n=>[n[0],midiToDeg(n[1],key,scale,60),n[2]])),chords:cleanDeg(prog.slice(0,2).flatMap((d,b)=>[0,2,4].map(k=>[b*16,d+k,15]))),bass:cleanDeg(prog.slice(0,2).map((d,b)=>[b*16,d,7]))};
+  // the raw hum as a muted audio track, lined up with the first note
+  if(H.audio){const id=uid();AUDIO[id]=H.audio;S.audio[id]={id,name:'Your hum',dur:H.audio.duration};try{idb.put(id,{name:'your-hum.wav',data:wavBytes(H.audio).buffer});}catch(e){}
+    const at=mkTrack('audio','Your hum',{mute:true,vol:.9,rev:0});S.tracks.push(at);const sd=60/bpm/4,offS=(H.first||0)/sd;
+    C.push({id:uid(),track:at.id,audio:id,start:0,len:Math.max(1,Math.ceil(H.audio.duration/sd-offS)),off:offS});}
+  S.markers=[{step:0,name:'Hum'}];if(bars>=8)S.markers.push({step:64,name:'Beat in'});S.markers.push({step:Lm,name:'End'});
+  S.bars=Math.max(8,bars+2);S.loop={on:false,start:0,end:Math.min(Lm,128)};S.playhead=0;S.curTrack='melody';S.curPattern=Object.keys(P)[0];S.selClip=null;
+  undoBuf=[];pushTake('Take A');eng&&eng.applyMix(S);persist();
+  return {src,bars,notes:mel.length};
+}
+function previewHum(q,bpm,key,scale){ensureAudio();if(playing)stopPlay(true);const mel=humToMelody(q,key,scale),sd=60/bpm/4,t=ctx.currentTime+.05,p=normPatch(PRESETS.flute);
+  const until=Math.min(mel.length,400);for(let i=0;i<until;i++){const n=mel[i];playSynth(ctx,eng.masterIn,p,n[1],t+n[0]*sd,n[2]*sd*.95,.8);}}
+function downsampleBuf(pcm,sr){const D=Math.max(1,Math.floor(sr/22050)),n=Math.floor(pcm.length/D),b=new AudioBuffer({length:Math.max(1,n),sampleRate:sr/D,numberOfChannels:1}),d=b.getChannelData(0);
+  let pk=0;for(let i=0;i<n;i++){let s=0;for(let j=0;j<D;j++)s+=pcm[i*D+j];d[i]=s/D;pk=Math.max(pk,Math.abs(d[i]));}if(pk>0&&pk<.5){const g=.7/pk;for(let i=0;i<n;i++)d[i]*=g;}return b;}
+
+// Welcome: hum a melody of any length, RAW finds tempo + key, you confirm, studio opens
+function openHum(){
+  const c=$('#authCard');c.innerHTML='';
+  const lvl=h('i',{style:'display:block;height:100%;width:0;background:#FF5A1F;border-radius:4px;transition:width .05s'}),prog=h('i',{style:'display:block;height:100%;width:0;background:#111;border-radius:4px'});
+  const st=h('b',{style:'font-size:22px;min-height:30px;font-family:var(--f-d);font-stretch:125%;text-transform:uppercase'},'Ready'),nt=h('span',{style:'font:600 15px var(--f-m);color:#3A3732;min-height:20px'},'Up to 5 minutes. Sing or hum at your own pace.');
+  const tm=h('span',{style:'font:600 15px var(--f-m);color:#3A3732'},'0:00 / 5:00');
+  const res=h('div',{style:'display:flex;flex-direction:column;gap:10px'});
+  const recB=h('button',{class:'next sig',type:'button',id:'humRec'},'Start humming');
+  const cancel=h('button',{class:'ghost',type:'button',onclick:()=>{if(humSess)humSess.stop=true;stopPlay(true);closeAuth();}},'Cancel');
+  c.append(h('h2',{class:'disp',id:'authTitle'},'Hum it'),
+    h('p',{},'Press start and hum or sing your tune, as long as you like up to 5 minutes. No click track, no tempo to set. RAW works out the tempo and key, checks them with you, then opens the studio with your melody, chords, bass and drums.'),
+    h('div',{style:'display:flex;flex-direction:column;gap:6px;padding:14px;border-radius:14px;background:#EDE7DD'},h('div',{style:'display:flex;justify-content:space-between;align-items:baseline;gap:10px'},st,tm),nt,
+      h('div',{style:'height:8px;border-radius:4px;background:rgba(17,17,17,.1);overflow:hidden'},lvl),h('div',{style:'height:4px;border-radius:4px;background:rgba(17,17,17,.1);overflow:hidden'},prog)),
+    res,recB,cancel);
+  let recording=false;
+  const record=async()=>{
+    if(recording){if(humSess)humSess.stop=true;return;}
+    stopPlay(true);res.innerHTML='';recording=true;recB.textContent='Stop';recB.className='next sig';st.textContent='Listening';
+    let rec;
+    try{rec=await recordFree({onLevel:v=>lvl.style.width=Math.round(v*100)+'%',onNote:n=>nt.textContent=n?'Hearing '+n:'…',onTime:s=>{tm.textContent=mmss(s)+' / 5:00';prog.style.width=(s/HUM_MAX*100).toFixed(1)+'%';}});}
+    catch(e){recording=false;st.textContent='No microphone';recB.textContent='Try again';res.append(h('div',{class:'note-box'},humErrorText(e)));return;}
+    recording=false;lvl.style.width='0';recB.disabled=true;st.textContent='Listening back';nt.textContent='Finding your notes, tempo and key…';
+    const {frames,hop}=await pitchTrack(rec.pcm,rec.sr,p=>prog.style.width=(p*100).toFixed(0)+'%');
+    const notes=segmentNotes(frames,hop);recB.disabled=false;prog.style.width='0';
+    if(notes.length<3){st.textContent='Didn’t catch that';nt.textContent='';recB.textContent='Try again';res.append(h('div',{class:'note-box'},'RAW heard no clear tune. Hum a little louder, close to the mic, one note at a time (“mm” or “da” works well).'));return;}
+    const H={notes,first:notes[0].t,bpm:detectTempo(notes),dur:rec.pcm.length/rec.sr,audio:downsampleBuf(rec.pcm,rec.sr)};
+    const requant=()=>{H.q=quantizeHum(notes.map(n=>({t:n.t-H.first,d:n.d,m:n.m})),H.bpm);};
+    requant();const k=detectKey(H.q);H.key=k.key;H.scale=k.scale;
+    track('hum_recorded',{notes:notes.length,secs:Math.round(H.dur),bpm:H.bpm});
+    confirm(H,requant);
+  };
+  const confirm=(H,requant)=>{
+    st.textContent=`Heard ${H.notes.length} notes`;nt.textContent=`${mmss(H.dur)} of humming`;tm.textContent='';recB.textContent='Record again';recB.className='ghost';
+    const bpmIn=h('input',{type:'text',id:'humBpm',value:String(H.bpm),inputmode:'numeric',style:'width:80px;text-align:center'});
+    const setB=v=>{H.bpm=clamp(Math.round(v),60,180);bpmIn.value=H.bpm;requant();};
+    bpmIn.addEventListener('change',()=>setB(+bpmIn.value||H.bpm));
+    const keySel=h('select',{id:'humKey'},...NOTE_NAMES.map((n,i)=>h('option',{value:i,selected:i===H.key},n)));
+    const scSel=h('select',{id:'humScale'},...Object.entries(RAGAS).map(([id,r])=>h('option',{value:id,selected:id===H.scale},r.name)));
+    keySel.addEventListener('change',()=>H.key=+keySel.value);scSel.addEventListener('change',()=>H.scale=scSel.value);
+    const desc=h('input',{type:'text',id:'humDesc',placeholder:'Optional vibe: “lofi, rainy, warm keys”'});
+    const row=(lab,...k)=>h('div',{style:'display:flex;gap:8px;align-items:center;flex-wrap:wrap'},h('label',{style:'min-width:64px;margin:0'},lab),...k);
+    const sm='padding:8px 12px;border-radius:10px;font-size:13px';
+    res.innerHTML='';
+    res.append(h('div',{style:'font-weight:600'},'Does this sound right? RAW detected:'),
+      row('Tempo',bpmIn,h('span',{},'BPM'),h('button',{class:'ghost',type:'button',style:sm,onclick:()=>setB(H.bpm/2)},'½ slower'),h('button',{class:'ghost',type:'button',style:sm,onclick:()=>setB(H.bpm*2)},'2× faster')),
+      row('Key',keySel,scSel),
+      h('label',{for:'humDesc',style:'margin:0'},'Describe the vibe (optional)'),desc,
+      h('div',{style:'display:flex;gap:8px'},
+        h('button',{class:'next',type:'button',style:'flex:1',onclick:()=>{previewHum(H.q,H.bpm,H.key,H.scale);}},'Play it back'),
+        h('button',{class:'next sig',type:'button',id:'humBuild',style:'flex:1.6',onclick:async e=>{const b=e.currentTarget;b.disabled=true;b.textContent='Building…';stopPlay(true);H.vibe=desc.value.trim();
+          const r=await buildFromHum(H);closeAuth();track('hum',{notes:r.notes,bars:r.bars,bpm:H.bpm,src:r.src});go('studio');play({from:0});
+          aiToast(`Built ${r.bars} bars from your hum: ${H.bpm} BPM, ${NOTE_NAMES[H.key]} ${RAGAS[H.scale].name}. Chords and bass follow your melody${r.src!=='built-in'?', drums and sounds by '+r.src:''}. Your original hum is on the muted “Your hum” track.`);}},'Yes, open the studio')));
+  };
+  recB.addEventListener('click',record);
+  $('#auth').classList.add('on');
 }
 // Piano roll: hum straight into the selected pattern
 async function humIntoPattern(pat,tr,btn){

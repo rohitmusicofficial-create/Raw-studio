@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RAW · System status</title><link rel="icon" href="favicon.svg">
+<style>
+body{margin:0;background:#F4F0EA;color:#111;font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+main{max-width:720px;margin:0 auto;padding:40px 20px 60px}
+h1{font-size:40px;letter-spacing:-.02em;margin:0 0 4px}h1 b{color:#FF5A1F}
+p.sub{color:#5a554d;margin:0 0 28px}
+.row{background:#fff;border-radius:16px;padding:16px 18px;margin:0 0 12px;box-shadow:0 1px 0 rgba(17,17,17,.06)}
+.top{display:flex;gap:12px;align-items:center}.dot{width:12px;height:12px;border-radius:50%;background:#bbb;flex:none}
+.ok .dot{background:#1DB954}.bad .dot{background:#E5484D}.warn .dot{background:#F5A524}
+.name{font-weight:700}.st{margin-left:auto;font:600 13px ui-monospace,Menlo,monospace;color:#5a554d;text-align:right}
+.fix{margin:10px 0 0 24px;color:#3A3732;font-size:15px}.fix ol{margin:6px 0 0;padding-left:20px}
+code{background:#EDE7DD;padding:1px 6px;border-radius:6px;font-size:13px;word-break:break-all}
+a{color:#111}.btn{display:inline-block;margin-top:18px;background:#111;color:#fff;padding:12px 18px;border-radius:12px;text-decoration:none;font-weight:600;border:0;font-size:15px;cursor:pointer}
+</style>
+<script src="config.js"></script>
+</head><body><main>
+<h1>RAW<b>.</b> status</h1><p class="sub">A quick self-check of this website. Green means working. Anything red has the fix written under it.</p>
+<div id="list"></div>
+<button class="btn" onclick="location.reload()">Check again</button> <a class="btn" style="background:#FF5A1F" href="/">Back to RAW</a>
+<p class="sub" style="margin-top:24px;font-size:13px">Checked from <span id="origin"></span> at <span id="when"></span>. Nothing secret is shown on this page.</p>
+<script>
+const L=document.getElementById('list');document.getElementById('origin').textContent=location.origin;document.getElementById('when').textContent=new Date().toLocaleString();
+function row(name){const r=document.createElement('div');r.className='row';r.innerHTML='<div class="top"><span class="dot"></span><span class="name"></span><span class="st">checking…</span></div>';r.querySelector('.name').textContent=name;L.append(r);
+  return (cls,st,fix)=>{r.className='row '+cls;r.querySelector('.st').textContent=st;if(fix){const f=document.createElement('div');f.className='fix';f.innerHTML=fix;r.append(f);}};}
+const mask=v=>v?v.slice(0,6)+'…'+v.slice(-4):'';
+(async()=>{
+  const C=window.RAW_CONFIG;
+  const r1=row('Settings file (config.js)');
+  if(!C){r1('bad','not found','The file <code>config.js</code> is missing from the website, so sign-in and saving can’t start.<ol><li>Open your <b>raw-studio</b> repository on GitHub.</li><li>Check that <code>config.js</code> sits next to <code>index.html</code> (not inside a folder).</li><li>If it’s gone, click <b>Add file → Create new file</b>, name it <code>config.js</code>, paste your saved settings, then <b>Commit</b>. Vercel redeploys in about a minute.</li></ol>');}
+  else if(!C.supabaseUrl||!C.supabaseAnonKey){r1('bad','empty','<code>config.js</code> is there but its Supabase values are blank. This usually happens when an update zip replaced it.<ol><li>On GitHub, open <code>config.js</code> and click the pencil icon.</li><li>Paste your <b>Project URL</b> into <code>supabaseUrl</code> and the <b>anon public</b> key into <code>supabaseAnonKey</code> (Supabase → Project Settings → API).</li><li>Commit. Vercel redeploys on its own.</li></ol>');}
+  else r1('ok','found · '+C.supabaseUrl.replace(/^https?:\/\//,''));
+  // Supabase
+  const r2=row('Supabase (sign-in and saving)');let sbOK=false;
+  if(!C||!C.supabaseUrl||!C.supabaseAnonKey)r2('bad','skipped','Fix the settings file first.');
+  else{try{const res=await fetch(C.supabaseUrl.replace(/\/$/,'')+'/auth/v1/settings',{headers:{apikey:C.supabaseAnonKey}});
+      if(res.ok){const j=await res.json();sbOK=true;const g=j.external&&j.external.google;r2(g?'ok':'warn',g?'connected · Google on':'connected · Google off',g?'':'Supabase answers, but Google sign-in is switched off. Supabase → Authentication → Sign In / Providers → Google → turn it on and paste your Client ID and secret.');}
+      else if(res.status===401||res.status===403)r2('bad','key rejected','Supabase doesn’t accept the key in <code>config.js</code>. Copy the <b>anon public</b> key again (Project Settings → API) and paste it, with no spaces, into <code>supabaseAnonKey</code>.');
+      else r2('bad','error '+res.status,'Supabase answered with an error. If your project was paused for inactivity, open the Supabase dashboard and click <b>Restore project</b>.');
+    }catch(e){r2('bad','can’t reach','RAW can’t reach <code>'+C.supabaseUrl+'</code>. Check the Project URL is exactly right (it ends in <code>.supabase.co</code>). If the project is paused, open Supabase and click <b>Restore project</b>.');}}
+  // library
+  const r3=row('Supabase library');
+  await new Promise(res=>{const s=document.createElement('script');s.src='vendor/supabase.js';s.onload=res;s.onerror=res;document.head.append(s);});
+  if(window.supabase&&window.supabase.createClient)r3('ok','loaded');else r3('bad','missing','The file <code>vendor/supabase.js</code> isn’t on the website. Upload the <code>vendor</code> folder from the RAW zip to your GitHub repository, next to <code>index.html</code>.');
+  // sign-in redirect + database
+  const r4=row('Database tables');
+  if(sbOK&&window.supabase){try{const sb=window.supabase.createClient(C.supabaseUrl,C.supabaseAnonKey);const {error}=await sb.from('profiles').select('id',{head:true,count:'exact'});
+      if(!error)r4('ok','ready');else if(/does not exist|schema cache/i.test(error.message))r4('bad','not set up','The tables aren’t created yet. In Supabase open <b>SQL Editor</b>, paste the contents of <code>supabase.sql</code> and click <b>Run</b>.');else r4('warn','check',error.message);
+    }catch(e){r4('warn','check',String(e.message||e));}}else r4('bad','skipped','Fix Supabase first.');
+  const r5=row('Sign-in return address');
+  r5('warn',location.origin,'Make sure this exact address is allowed in Supabase → Authentication → URL Configuration: set <b>Site URL</b> to <code>'+location.origin+'</code> and add <code>'+location.origin+'/**</code> under <b>Redirect URLs</b>. If you open RAW on a different address (a new domain, or another Vercel link), add that one too.');
+  // AI
+  const r6=row('AI composer (Gemini, Groq backup)');
+  const ep=(C&&C.aiEndpoint)||'/api/compose';
+  try{const res=await fetch(ep);if(res.status===404)throw new Error('404');const j=await res.json();
+    const gOK=j.gemini==='working',qOK=j.groq==='working';j.geminiError=j.geminiKey&&!gOK?j.gemini:'';j.groqError=j.groqKey&&!qOK?j.groq:'';
+    const parts=[];if(gOK)parts.push('Gemini on');if(qOK)parts.push('Groq on');
+    if(gOK||qOK)r6(gOK?'ok':'warn',parts.join(' · '),gOK?'':'Gemini isn’t answering, Groq is covering. '+(j.geminiError?('Gemini said: <code>'+String(j.geminiError).slice(0,160)+'</code>'):''));
+    else if(!j.geminiKey&&!j.groqKey)r6('bad','keys missing','Vercel has no AI keys.<ol><li>Vercel → your project → <b>Settings → Environment Variables</b>.</li><li>Add <code>GEMINI_API_KEY</code> (and optionally <code>GROQ_API_KEY</code>, spelled with a q). Tick Production.</li><li>Go to <b>Deployments</b>, open the top one, click <b>⋯ → Redeploy</b>.</li></ol>');
+    else r6('bad','keys rejected','The keys are set but the AI providers refused them. '+(j.geminiError?'Gemini said: <code>'+String(j.geminiError).slice(0,160)+'</code> ':'')+(j.groqError?'Groq said: <code>'+String(j.groqError).slice(0,160)+'</code> ':'')+'Create a fresh key, paste it into Vercel, then redeploy.');
+  }catch(e){r6('bad','not found','The AI function <code>/api/compose</code> isn’t deployed. Check that the <code>api</code> folder (with <code>compose.js</code> inside) is in your GitHub repository next to <code>index.html</code>.');}
+})();
+</script></main></body></html>
